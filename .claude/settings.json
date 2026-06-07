@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip3 install *)",
+      "Bash(python3 -c \"import statsmodels; import sklearn; print\\('ok'\\)\")",
+      "Bash(jupyter nbconvert *)",
+      "Bash(python3 -m nbconvert --to notebook --execute \"/Applications/Local/GitHub/sem/notebooks/Structural Equation Modelling.ipynb\" --output /tmp/sem_test.ipynb)",
+      "Bash(python3 -m nbconvert --to notebook --execute --inplace \"notebooks/Structural Equation Modelling.ipynb\")",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import docx; print\\('python-docx OK'\\)\")",
+      "Bash(python3 output/gen_report.py)",
+      "Bash(python3 output/gen_sem_diagram.py)",
+      "Bash(/Users/tongkyu.kim/Library/Python/3.9/bin/jupyter nbconvert *)",
+      "Bash(git -C /Applications/Local/GitHub/sem log --oneline)",
+      "Bash(git -C /Applications/Local/GitHub/sem branch -a)",
+      "Bash(python3 -c \"import sys; print\\(sys.version\\)\")"
+    ]
+  }
+}
