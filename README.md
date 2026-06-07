@@ -9,6 +9,8 @@
 
 This repository contains a complete, self-contained SEM analysis pipeline examining how AI risk awareness and environmental awareness predict AI-use behaviors among young adults in South Korea, mediated by attitude toward AI. The workflow covers measurement validation, structural estimation, mediation analysis, multigroup comparison, and output generation — implemented entirely in Python as a reproducible Jupyter notebook.
 
+This repository builds upon and extends the Python SEM implementation developed by Vicky Gupta (vicky60629). While the original repository demonstrates SEM estimation procedures in Python, the present project expands the workflow into a full research pipeline including measurement validation, mediation analysis, multigroup analysis, automated reporting, and publication-ready outputs.
+
 The repository serves three purposes, described in detail below.
 
 ---
