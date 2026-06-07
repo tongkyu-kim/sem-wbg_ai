@@ -284,8 +284,3 @@ Korea Green Growth Trust Fund (KGGTF) Youth Intern Program.
 World Bank Group. https://github.com/donkeekim/sem
 ```
 
----
-
-## License
-
-This repository is released under the [MIT License](LICENSE). The survey data (`src/raw/`) are shared for replication purposes and are not licensed for redistribution or use in independent research without permission.
