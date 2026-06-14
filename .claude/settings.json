@@ -13,7 +13,9 @@
       "Bash(/Users/tongkyu.kim/Library/Python/3.9/bin/jupyter nbconvert *)",
       "Bash(git -C /Applications/Local/GitHub/sem log --oneline)",
       "Bash(git -C /Applications/Local/GitHub/sem branch -a)",
-      "Bash(python3 -c \"import sys; print\\(sys.version\\)\")"
+      "Bash(python3 -c \"import sys; print\\(sys.version\\)\")",
+      "Bash(jupyter --version)",
+      "Bash(python3 -c \"import nbformat, nbconvert; print\\('ok'\\)\")"
     ]
   }
 }
