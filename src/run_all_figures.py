@@ -21,14 +21,12 @@ matplotlib.use('Agg')          # headless – no display needed
 import matplotlib.pyplot as plt
 from datetime import datetime
 from scipy.stats import t as t_dist
-from sklearn.decomposition import FactorAnalysis
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.model_selection import cross_val_score
 import shap
 
 warnings.filterwarnings('ignore')
-shap.initjs()
 
 DATE    = datetime.today().strftime('%Y%m%d')
 OUT_FIG = 'output/figures'
@@ -50,6 +48,12 @@ CONSTRUCTS = {
 }
 REVERSE_ITEMS = ['att_skill_worry']
 
+STRUCT_MODEL = {
+    'Attitude':          ['Awareness_Worry', 'Awareness_Env'],
+    'Beh_Environmental': ['Attitude'],
+    'Beh_Responsible':   ['Attitude'],
+}
+
 def prep(items):
     sub = df[items].copy()
     for c in REVERSE_ITEMS:
@@ -57,27 +61,59 @@ def prep(items):
             sub[c] = 6 - sub[c]
     return sub
 
-def get_loadings(data):
-    if data.shape[1] < 2:
-        return np.array([1.0])
-    fa = FactorAnalysis(n_components=1, random_state=0)
-    fa.fit(StandardScaler().fit_transform(data))
-    lam = fa.components_[0]
-    if np.sum(lam < 0) > np.sum(lam >= 0):
-        lam = -lam
-    return lam
+def pls_nipals(constructs, struct_model, n_iter=300, tol=1e-7):
+    # PLS-SEM NIPALS: centroid inner weighting, reflective outer OLS.
+    n = len(df)
+    blocks = {}
+    for cname, items in constructs.items():
+        blocks[cname] = StandardScaler().fit_transform(prep(items))
 
-def bartlett_score(items):
-    sub = prep(items)
-    z   = StandardScaler().fit_transform(sub)
-    lam = np.abs(get_loadings(pd.DataFrame(z, columns=sub.columns)))
-    psi = np.maximum(1 - lam ** 2, 0.05)
-    w   = lam / psi
-    return z @ w / (lam @ w)
+    lv = {}
+    for cname in constructs:
+        s = blocks[cname].mean(axis=1)
+        std = s.std(ddof=1)
+        lv[cname] = (s - s.mean()) / (std if std > 0 else 1.0)
 
-factor_scores = pd.DataFrame({
-    cname: bartlett_score(items) for cname, items in CONSTRUCTS.items()
-})
+    adj = {c: set() for c in constructs}
+    for outcome, preds in struct_model.items():
+        for p in preds:
+            adj[outcome].add(p)
+            adj[p].add(outcome)
+
+    outer_w = {}
+    for _ in range(n_iter):
+        old = {c: lv[c].copy() for c in constructs}
+
+        inner = {}
+        for c in constructs:
+            s = np.zeros(n)
+            for c2 in adj[c]:
+                s += np.sign(np.corrcoef(lv[c], lv[c2])[0, 1]) * lv[c2]
+            inner[c] = s
+
+        for c in constructs:
+            X, z = blocks[c], inner[c]
+            denom = float(z @ z)
+            w = X.T @ z / denom if denom > 0 else np.ones(X.shape[1]) / X.shape[1]
+            outer_w[c] = w
+            raw = X @ w
+            std = raw.std(ddof=1)
+            lv[c] = (raw - raw.mean()) / (std if std > 0 else 1.0)
+
+        if sum(np.sum((lv[c] - old[c]) ** 2) for c in constructs) < tol:
+            break
+
+    outer_loadings = {}
+    for c, items in constructs.items():
+        X, y = blocks[c], lv[c]
+        outer_loadings[c] = np.array(
+            [np.corrcoef(X[:, j], y)[0, 1] for j in range(X.shape[1])]
+        )
+
+    return pd.DataFrame({c: lv[c] for c in constructs}), outer_w, outer_loadings
+
+factor_scores, pls_outer_w, pls_outer_loadings = pls_nipals(CONSTRUCTS, STRUCT_MODEL)
+print('PLS-SEM NIPALS converged.')
 
 def ols_path(y_name, x_names, data):
     y     = data[y_name].values
@@ -200,9 +236,9 @@ for dv, features in MODELS_10.items():
     X = pd.DataFrame(iv_df[features].values, columns=labels)
     y = fs_df[dv].values
 
-    gbm = GradientBoostingRegressor(n_estimators=200, max_depth=3,
+    gbm = GradientBoostingRegressor(n_estimators=100, max_depth=2,
                                      learning_rate=0.05, subsample=0.8,
-                                     random_state=42)
+                                     min_samples_leaf=8, random_state=42)
     gbm.fit(X, y)
     fitted_10[dv] = gbm
 
@@ -307,4 +343,83 @@ with pd.ExcelWriter(shap_xlsx, engine='openpyxl') as w:
         w, sheet_name='Model_Fit', index=False)
 print(f'Saved -> {shap_xlsx}')
 
-print('\n✓ All done.')
+# ═══════════════════════════════════════════════════════════════════════════
+# BLACK-AND-WHITE VERSIONS
+# ═══════════════════════════════════════════════════════════════════════════
+print('\n-- B&W figures --')
+
+BW_GRAYS   = ['#111111', '#666666', '#bbbbbb']
+BW_HATCHES = ['///', '\\\\\\', 'xxx']
+
+# ── B&W grouped bar chart ─────────────────────────────────────────────────
+fig, ax = plt.subplots(figsize=(12, 5))
+for idx, (dv, gray, hatch) in enumerate(zip(MODELS_10.keys(), BW_GRAYS, BW_HATCHES)):
+    sub  = imp_df[imp_df['Outcome'] == dv].set_index('Label')
+    vals = [sub.loc[lbl, 'Mean |SHAP|'] if lbl in sub.index else 0.0
+            for lbl in all_labels_ord]
+    ax.bar(x + idx * w_bar, vals, w_bar,
+           label=f'{dv}  (CV R²={r2_dict_10[dv]})',
+           color=gray, hatch=hatch, edgecolor='white', linewidth=0.5)
+
+ax.set_xticks(x + w_bar)
+ax.set_xticklabels(all_labels_ord, rotation=32, ha='right', fontsize=9)
+ax.set_ylabel('Mean |SHAP value|', fontsize=10)
+ax.set_title('SHAP Feature Importance — AI Use Survey  (N = 117)',
+             fontsize=12, fontweight='bold')
+ax.legend(fontsize=9, loc='upper right')
+ax.spines[['top', 'right']].set_visible(False)
+plt.tight_layout()
+bar_bw = f'{OUT_FIG}/shap_importance_{DATE}_bw.png'
+plt.savefig(bar_bw, dpi=150, bbox_inches='tight')
+plt.close()
+print(f'Saved -> {bar_bw}')
+
+# ── B&W beeswarm plots ────────────────────────────────────────────────────
+gray_cmap = plt.get_cmap('gray_r')
+for dv, sv in sv_dict_10.items():
+    plt.figure()
+    shap.plots.beeswarm(sv, max_display=len(sv.feature_names),
+                        color=gray_cmap, show=False)
+    plt.title(f'SHAP Beeswarm: {dv}  (CV R²={r2_dict_10[dv]})',
+              fontsize=11, pad=14)
+    bee_bw = f'{OUT_FIG}/shap_beeswarm_{dv}_{DATE}_bw.png'
+    plt.savefig(bee_bw, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f'Saved -> {bee_bw}')
+
+# ── B&W regression heatmap ────────────────────────────────────────────────
+# Use |β| for shade intensity; sign shown in annotation text
+abs_vals = pivot.values.astype(float)
+abs_disp = np.abs(np.where(np.isnan(abs_vals), 0, abs_vals))
+
+fig, ax = plt.subplots(figsize=(8, 5))
+im = ax.imshow(abs_disp, cmap='Greys', vmin=0, vmax=0.45, aspect='auto')
+
+ax.set_xticks(range(len(pivot.columns)))
+ax.set_xticklabels(pivot.columns, fontsize=9)
+ax.set_yticks(range(len(pivot.index)))
+ax.set_yticklabels(pivot.index, fontsize=9)
+
+for i in range(len(pivot.index)):
+    for j in range(len(pivot.columns)):
+        val = pivot.values[i, j]
+        if np.isnan(val):
+            continue
+        row = reg_df[(reg_df['Item Label'] == pivot.index[i]) &
+                     (reg_df['Outcome'] == pivot.columns[j])]
+        sig = row['Sig'].values[0] if len(row) else ''
+        color = 'white' if abs(val) > 0.25 else 'black'
+        ax.text(j, i, f'{val:+.2f}{sig}', ha='center', va='center',
+                fontsize=8, color=color)
+
+plt.colorbar(im, ax=ax, label='|β (std)|')
+ax.set_title(
+    'Item-Level Regressions on Outcome Factor Scores  (β std; shade = magnitude)',
+    fontsize=10, fontweight='bold', pad=10)
+plt.tight_layout()
+hm_bw = f'{OUT_FIG}/item_regression_heatmap_{DATE}_bw.png'
+plt.savefig(hm_bw, dpi=150, bbox_inches='tight')
+plt.close()
+print(f'Saved -> {hm_bw}')
+
+print('\nAll done.')
